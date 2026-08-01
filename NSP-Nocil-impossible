@@ -1,0 +1,207 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local CoreGui = game:GetService("CoreGui")
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+-- States
+local noclipOn = false
+local invisOn = false
+local espOn = false
+
+local highlights = {}
+local tracers = {}
+
+-- [[ 1. MAIN SCREEN GUI ]] --
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "Delta3in1Menu"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = (gethui and gethui()) or CoreGui
+
+-- [[ 2. TOGGLE MENU PLATE (แผ่นเปิด/ปิดหน้าต่าง) ]] --
+local Plate = Instance.new("TextButton")
+Plate.Name = "OpenPlate"
+Plate.Size = UDim2.new(0, 100, 0, 30)
+Plate.Position = UDim2.new(0.02, 0, 0.4, 0)
+Plate.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+Plate.Text = "📜 เมนูสคริปต์"
+Plate.TextColor3 = Color3.fromRGB(255, 255, 255)
+Plate.TextSize = 12
+Plate.Font = Enum.Font.SourceSansBold
+Plate.Active = true
+Plate.Draggable = true
+Plate.Parent = ScreenGui
+
+Instance.new("UICorner", Plate).CornerRadius = UDim.new(0, 6)
+
+-- [[ 3. MAIN WINDOW FRAME ]] --
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Size = UDim2.new(0, 170, 0, 160)
+MainFrame.Position = UDim2.new(0.5, -85, 0.3, 0)
+MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+MainFrame.BorderSizePixel = 0
+MainFrame.Active = true
+MainFrame.Draggable = true
+MainFrame.Visible = false -- ซ่อนไว้ก่อน ต้องกด Plate ถึงจะเปิด
+MainFrame.Parent = ScreenGui
+
+Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 8)
+
+local Title = Instance.new("TextLabel", MainFrame)
+Title.Size = UDim2.new(1, 0, 0, 25)
+Title.BackgroundTransparency = 1
+Title.Text = "Control Panel (3 in 1)"
+Title.TextColor3 = Color3.fromRGB(220, 220, 220)
+Title.TextSize = 12
+Title.Font = Enum.Font.SourceSansBold
+
+-- Helper function to create rows
+local function createButtonRow(text, yPos)
+    local label = Instance.new("TextLabel", MainFrame)
+    label.Size = UDim2.new(0.65, 0, 0, 30)
+    label.Position = UDim2.new(0.05, 0, 0, yPos)
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.TextColor3 = Color3.fromRGB(255, 255, 255)
+    label.TextSize = 12
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Font = Enum.Font.SourceSans
+
+    local btn = Instance.new("TextButton", MainFrame)
+    btn.Size = UDim2.new(0, 30, 0, 30)
+    btn.Position = UDim2.new(0.72, 0, 0, yPos)
+    btn.BackgroundColor3 = Color3.fromRGB(0, 0, 0) -- เริ่มต้นสีดำ (ปิด)
+    btn.Text = ""
+    
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+    return btn
+end
+
+local BtnNoclip = createButtonRow("1. ทะลุสิ่งของ", 30)
+local BtnInvis = createButtonRow("2. ล่องหน", 70)
+local BtnESP = createButtonRow("3. มองทะลุ (ESP)", 110)
+
+-- Plate Click Logic (สลับเปิด/ซ่อน หน้าต่างหลัก)
+Plate.MouseButton1Click:Connect(function()
+    MainFrame.Visible = not MainFrame.Visible
+end)
+
+-- [[ 4. LOGIC FUNCTIONS ]] --
+
+-- Update Button Color (เปิด = แดง / ปิด = ดำ)
+local function updateBtnColor(btn, state)
+    btn.BackgroundColor3 = state and Color3.fromRGB(230, 40, 40) or Color3.fromRGB(0, 0, 0)
+end
+
+-- 1. Noclip Logic (ไม่ทะลุพื้นดิน)
+RunService.Stepped:Connect(function()
+    if noclipOn and LocalPlayer.Character then
+        for _, part in ipairs(LocalPlayer.Character:GetDescendants()) do
+            if part:IsA("BasePart") then
+                -- ยกเว้นชิ้นส่วนที่เป็นพื้น หรือกำลังยืนอยู่
+                if part.Name ~= "Terrain" and not part.Name:lower():find("floor") and not part.Name:lower():find("ground") then
+                    part.CanCollide = false
+                end
+            end
+        end
+    end
+end)
+
+BtnNoclip.MouseButton1Click:Connect(function()
+    noclipOn = not noclipOn
+    updateBtnColor(BtnNoclip, noclipOn)
+end)
+
+-- 2. Invisible Logic
+BtnInvis.MouseButton1Click:Connect(function()
+    invisOn = not invisOn
+    updateBtnColor(BtnInvis, invisOn)
+    
+    local char = LocalPlayer.Character
+    if char then
+        for _, obj in ipairs(char:GetDescendants()) do
+            if obj:IsA("BasePart") or obj:IsA("Decal") then
+                if obj.Name ~= "HumanoidRootPart" then
+                    obj.Transparency = invisOn and 1 or 0
+                end
+            end
+        end
+    end
+end)
+
+-- 3. ESP Wallhack & Tracer Logic
+local function clearEsp(player)
+    if highlights[player] then highlights[player]:Destroy() highlights[player] = nil end
+    if tracers[player] then tracers[player]:Remove() tracers[player] = nil end
+end
+
+Players.PlayerRemoving:Connect(clearEsp)
+
+RunService.RenderStepped:Connect(function()
+    if not espOn then
+        for plr, _ in pairs(highlights) do clearEsp(plr) end
+        return
+    end
+
+    local myChar = LocalPlayer.Character
+    local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local char = player.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            local humanoid = char and char:FindFirstChild("Humanoid")
+
+            if char and hrp and humanoid and humanoid.Health > 0 then
+                -- Highlight (Wallhack)
+                if not highlights[player] or highlights[player].Parent ~= char then
+                    if highlights[player] then highlights[player]:Destroy() end
+                    local hl = Instance.new("Highlight")
+                    hl.FillColor = Color3.fromRGB(255, 50, 50)
+                    hl.FillTransparency = 0.5
+                    hl.OutlineColor = Color3.fromRGB(255, 255, 255)
+                    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                    hl.Adornee = char
+                    hl.Parent = char
+                    highlights[player] = hl
+                end
+
+                -- Tracer Line (จากเท้าเราไปเท้าคนอื่น)
+                if Drawing then
+                    if not tracers[player] then
+                        local line = Drawing.new("Line")
+                        line.Color = Color3.fromRGB(255, 255, 255)
+                        line.Thickness = 1.5
+                        line.Transparency = 1
+                        tracers[player] = line
+                    end
+
+                    local line = tracers[player]
+                    if line and myHrp then
+                        local targetPos, targetOnScreen = Camera:WorldToViewportPoint(hrp.Position - Vector3.new(0, 3, 0))
+                        local myPos, myOnScreen = Camera:WorldToViewportPoint(myHrp.Position - Vector3.new(0, 3, 0))
+
+                        if targetOnScreen and myOnScreen then
+                            line.From = Vector2.new(myPos.X, myPos.Y)
+                            line.To = Vector2.new(targetPos.X, targetPos.Y)
+                            line.Visible = true
+                        else
+                            line.Visible = false
+                        end
+                    end
+                end
+            else
+                clearEsp(player)
+            end
+        end
+    end
+end)
+
+BtnESP.MouseButton1Click:Connect(function()
+    espOn = not espOn
+    updateBtnColor(BtnESP, espOn)
+    if not espOn then
+        for plr, _ in pairs(highlights) do clearEsp(plr) end
+    end
+end)
